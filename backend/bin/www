@@ -1,0 +1,97 @@
+const app = require("../app");
+const http = require("http");
+const connectDb = require("../database/db");
+const { Server } = require("socket.io");
+const httpServer = http.createServer(app);
+httpServer.listen(5000);
+const socket = require("socket.io");
+const Message = require("../models/message");
+const socketHash = require("../socket.io/socket");
+const io = new Server(httpServer, {
+  cors: {
+  
+  },
+});
+
+
+const hashMap = new socketHash();
+
+
+
+
+io.on("connection", (socket) => {
+ hashMap.setId(socket.handshake.auth.userId, socket.id)
+console.log(hashMap)
+  // socket.join(socket.handshake.auth.userId);
+  // socket.join(socket.handshake.auth.groups);
+  // console.log(socket.handshake.auth.groups);
+  socket.on("PRIVATE_MESSAGE", async ({ From, To, messageText }) => {
+    let time = new Date().getTime(),
+      messageType = 0,
+      ToGroup = null,
+      file = null,
+      metaData = null;
+
+    let message = await (
+      await Message.create({
+        From,
+        To,
+        ToGroup,
+        file,
+        time,
+        messageType,
+        messageText,
+        metaData,
+      })
+    ).populate({ path: "From", select: ["name"] });
+    console.log(message);
+let toId = hashMap.getId(To._id);
+
+    socket.to(toId).emit("PRIVATE_MESSAGE_R", message);
+  });
+  socket.on("GROUP_MESSAGE", async ({ From, To, messageText }) => {
+    let time = new Date().getTime(),
+      messageType = 0,
+      file = null,
+      metaData = null;
+
+    let message = await (
+      await Message.create({
+        From,
+        ToGroup: To,
+        file,
+        time,
+        messageType,
+        messageText,
+        metaData,
+      })
+    ).populate({ path: "From", select: ["name"] });
+
+    
+    console.log(message , "Group message");
+    io.to(To._id).emit("GROUP_MESSAGE_R", message);
+  });
+
+socket.on('TYPING', (data)=>{
+  console.log(data.messageText)
+  const toId = hashMap.getId(data.To._id)
+  socket.to(toId).emit("TYPING_R", data);
+})
+
+
+  socket.on("disconnect", () => {
+    console.log(socket.handshake.auth.userId, "has left the arena");
+  });
+});
+
+connectDb()
+  .then(() => {
+    console.log("Db is connected");
+  })
+  .catch((err) => {
+    console.log(err.message);
+  });
+
+httpServer.on("listening", () => {
+  console.log("I'm on");
+});
